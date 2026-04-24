@@ -1,0 +1,588 @@
+<!doctype html>
+<html lang="zh-Hant">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>帳號排班萬年曆</title>
+  <style>
+    :root {
+      --bg: #0b0f14;
+      --panel: #111823;
+      --panel-2: #0f1520;
+      --text: #f3f7ff;
+      --muted: #c6d4e8;
+      --line: #3a4b63;
+      --sun: #ff6b7a;
+      --focus: #7dd3fc;
+      --radius: 14px;
+      --cell-h: 130px;
+      /* 原本108，放大 */
+      --week-h: 48px;
+      /* 原本34，放大 */
+      --shadow: 0 8px 20px rgba(0, 0, 0, .35);
+      --min-cal-w: 980px;
+      /* 手機時讓日曆可橫向滑動 */
+    }
+
+    * {
+      box-sizing: border-box
+    }
+
+    html,
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: "Noto Sans TC", "PingFang TC", "Microsoft JhengHei", system-ui, -apple-system, sans-serif;
+      font-size: 18px;
+      line-height: 1.6;
+    }
+
+    .app {
+      max-width: 1320px;
+      margin: 20px auto;
+      padding: 0 16px 24px;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: flex-start;
+      justify-content: space-between;
+      gap: 14px;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+    }
+
+    .title {
+      font-size: 30px;
+      font-weight: 800;
+      letter-spacing: .3px;
+      line-height: 1.3;
+    }
+
+    .controls {
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .btn {
+      border: 2px solid var(--line);
+      background: #172132;
+      color: var(--text);
+      min-height: 52px;
+      padding: 0 16px;
+      border-radius: 12px;
+      cursor: pointer;
+      font-weight: 800;
+      font-size: 18px;
+      box-shadow: var(--shadow);
+    }
+
+    .btn:hover {
+      filter: brightness(1.08)
+    }
+
+    .btn:active {
+      transform: translateY(1px)
+    }
+
+    .btn:focus-visible {
+      outline: 3px solid var(--focus);
+      outline-offset: 2px;
+    }
+
+    .month-label {
+      min-width: 180px;
+      text-align: center;
+      font-weight: 800;
+      color: #dbeafe;
+      font-size: 22px;
+      padding: 10px 8px;
+    }
+
+    /* 外層加橫向捲動容器 */
+    .calendar-scroll {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+      border-radius: var(--radius);
+    }
+
+    .calendar-wrap {
+      min-width: var(--min-cal-w);
+      border: 2px solid var(--line);
+      background: linear-gradient(180deg, var(--panel), var(--panel-2));
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: var(--shadow);
+      position: relative;
+    }
+
+    .weekdays {
+      height: var(--week-h);
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      border-bottom: 2px solid var(--line);
+      background: #131d2b;
+      align-items: center;
+      text-align: center;
+      font-size: 20px;
+      font-weight: 800;
+      color: var(--muted);
+    }
+
+    .weekdays .sun {
+      color: var(--sun)
+    }
+
+    .grid {
+      position: relative;
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      grid-auto-rows: var(--cell-h);
+    }
+
+    .cell {
+      border-right: 1px solid var(--line);
+      border-bottom: 1px solid var(--line);
+      padding: 8px 10px;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .cell:nth-child(7n) {
+      border-right: none
+    }
+
+    .date {
+      font-size: 22px;
+      color: #d7e6fb;
+      font-weight: 800;
+      user-select: none;
+    }
+
+    .cell.other .date {
+      color: #7f93b0
+    }
+
+    .cell.sun .date {
+      color: var(--sun)
+    }
+
+    .cell.today {
+      background: linear-gradient(180deg, rgba(80, 130, 190, .28), rgba(80, 130, 190, .08));
+      outline: 2px solid #7fb8ff;
+      outline-offset: -2px;
+    }
+
+    .event-layer {
+      pointer-events: none;
+      position: absolute;
+      inset: 0;
+    }
+
+    .event-bar {
+      position: absolute;
+      height: 26px;
+      border-radius: 999px;
+      color: #ffffff;
+      font-size: 16px;
+      font-weight: 800;
+      line-height: 26px;
+      padding: 0 10px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      box-shadow: 0 3px 8px rgba(0, 0, 0, .28), inset 0 0 0 1px rgba(255, 255, 255, .14);
+      pointer-events: auto;
+    }
+
+    .legend {
+      margin-top: 12px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px 16px;
+      align-items: center;
+      color: #d0ddf0;
+      font-size: 18px;
+    }
+
+    .chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 6px 10px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: #101a28;
+      font-size: 16px;
+      color: #e7f0ff;
+      font-weight: 700;
+    }
+
+    .dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .info {
+      margin-top: 12px;
+      border: 2px solid var(--line);
+      border-radius: 12px;
+      background: #0f1622;
+      padding: 12px 14px;
+      color: #d0def3;
+      font-size: 18px;
+      line-height: 1.7;
+    }
+
+    .ok {
+      color: #4ade80;
+      font-weight: 800
+    }
+
+    .warn {
+      color: #fbbf24;
+      font-weight: 800
+    }
+
+    /* 平板 */
+    @media (max-width: 980px) {
+      :root {
+        --cell-h: 120px;
+        --week-h: 44px;
+        --min-cal-w: 900px;
+      }
+
+      .title {
+        font-size: 26px
+      }
+
+      .month-label {
+        font-size: 20px
+      }
+
+      .btn {
+        min-height: 50px;
+        font-size: 17px
+      }
+
+      .date {
+        font-size: 20px
+      }
+
+      .event-bar {
+        font-size: 15px;
+        height: 24px;
+        line-height: 24px;
+      }
+    }
+
+    /* 手機 */
+    @media (max-width: 768px) {
+      :root {
+        --cell-h: 112px;
+        --week-h: 42px;
+        --min-cal-w: 820px;
+      }
+
+      .app {
+        padding: 0 12px 18px;
+      }
+
+      .topbar {
+        flex-direction: column;
+        align-items: stretch;
+      }
+
+      .title {
+        font-size: 24px;
+      }
+
+      .controls {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .month-label {
+        grid-column: 1 / -1;
+        order: -1;
+        font-size: 22px;
+        background: #101a28;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+      }
+
+      .btn {
+        width: 100%;
+        min-height: 52px;
+        font-size: 18px;
+      }
+
+      .legend,
+      .info {
+        font-size: 17px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <div class="topbar">
+      <div class="title">帳號排班萬年曆）</div>
+      <div class="controls">
+        <button class="btn" id="prevBtn">◀ 上月</button>
+        <div class="month-label" id="monthLabel"></div>
+        <button class="btn" id="nextBtn">下月 ▶</button>
+        <button class="btn" id="todayBtn">今天</button>
+      </div>
+    </div>
+
+    <div class="calendar-scroll">
+      <div class="calendar-wrap">
+        <div class="weekdays">
+          <div class="sun">日</div>
+          <div>一</div>
+          <div>二</div>
+          <div>三</div>
+          <div>四</div>
+          <div>五</div>
+          <div>六</div>
+        </div>
+        <div class="grid" id="grid"></div>
+        <div class="event-layer" id="eventLayer"></div>
+      </div>
+    </div>
+
+    <div class="legend">
+      <span><b>硬規則：</b>每週至少一筆週一型(7天) + 一筆週四型(4天)</span>
+    </div>
+    <div class="legend" id="accountLegend"></div>
+    <div class="info" id="statusBox"></div>
+  </div>
+
+  <script>
+    // ===== 日期工具 =====
+    const DAY = 24 * 60 * 60 * 1000;
+    const fmtYMD = d => new Date(d.getFullYear(), d.getMonth(), d.getDate());
+    const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+    const sameDate = (a, b) => a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
+    const startOfWeekSun = d => addDays(fmtYMD(d), -fmtYMD(d).getDay());
+    const firstDayOfMonth = (y, m) => new Date(y, m, 1);
+    const lastDayOfMonth = (y, m) => new Date(y, m + 1, 0);
+    const fmt = d => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+
+    function getMonthGridRange(y, m) {
+      const first = firstDayOfMonth(y, m), last = lastDayOfMonth(y, m);
+      const start = startOfWeekSun(first);
+      const end = addDays(startOfWeekSun(addDays(last, 6 - last.getDay())), 6);
+      return { start, end };
+    }
+
+    // ===== 帳號池 =====
+    const A = ["A1", "A2", "A3", "A4", "A5"];
+    const B = ["B1", "B2", "B3", "B4", "B5"];
+    const ALL = [...A, ...B];
+
+    const ACCOUNT_COLORS = {
+      A1: "#22c55e", A2: "#06b6d4", A3: "#3b82f6", A4: "#8b5cf6", A5: "#ec4899",
+      B1: "#f59e0b", B2: "#ef4444", B3: "#84cc16", B4: "#14b8a6", B5: "#f97316"
+    };
+
+    const MIN_GAP = 31;     // 離開後 >30天
+    const LEN_MON = 7;      // 週一型
+    const LEN_THU = 4;      // 週四型
+
+    // ===== 排程核心：每週強制一週一型+一週四型 =====
+    function generateSchedules(windowStart, windowEnd) {
+      const planStart = addDays(windowStart, -120);
+      const planEnd = addDays(windowEnd, 120);
+
+      const state = {};
+      ALL.forEach(acc => state[acc] = { lastEnd: addDays(planStart, -200), used: 0 });
+
+      const events = [];
+
+      const canUse = (acc, day) => day >= addDays(state[acc].lastEnd, MIN_GAP);
+
+      function pickAccount(day) {
+        const cands = ALL.filter(acc => canUse(acc, day));
+        if (!cands.length) return null;
+        cands.sort((x, y) => {
+          if (state[x].used !== state[y].used) return state[x].used - state[y].used;
+          return state[x].lastEnd - state[y].lastEnd;
+        });
+        return cands[0];
+      }
+
+      function addEvent(acc, s, len, label) {
+        const start = fmtYMD(s), end = addDays(start, len);
+        events.push({
+          id: `${acc}-${start.toISOString()}-${label}`,
+          account: acc,
+          title: `${acc}`,
+          start, end
+        });
+        state[acc].lastEnd = end;
+        state[acc].used++;
+      }
+
+      // 以週為單位前進（週日為每週起點）
+      let wk = startOfWeekSun(planStart);
+      while (wk <= planEnd) {
+        const mon = addDays(wk, 1);
+        const thu = addDays(wk, 4);
+
+        // 強制本週一筆週一型
+        const accMon = pickAccount(mon);
+        if (accMon) addEvent(accMon, mon, LEN_MON);
+
+        // 強制本週一筆週四型
+        const accThu = pickAccount(thu);
+        if (accThu) addEvent(accThu, thu, LEN_THU);
+
+        wk = addDays(wk, 7);
+      }
+
+      // 只保留視窗附近
+      return events.filter(ev => ev.end > addDays(windowStart, -40) && ev.start < addDays(windowEnd, 40));
+    }
+
+    // ===== UI渲染 =====
+    const gridEl = document.getElementById('grid');
+    const eventLayer = document.getElementById('eventLayer');
+    const monthLabel = document.getElementById('monthLabel');
+    const statusBox = document.getElementById('statusBox');
+
+    const today = fmtYMD(new Date());
+    let view = new Date(today.getFullYear(), today.getMonth(), 1);
+
+    function renderLegend() {
+      const el = document.getElementById('accountLegend');
+      el.innerHTML = ALL.map(acc => `<span class="chip"><i class="dot" style="background:${ACCOUNT_COLORS[acc]}"></i>${acc}</span>`).join('');
+    }
+
+    function countHoles(events, start, end) {
+      let holes = 0;
+      for (let d = new Date(start); d <= end; d = addDays(d, 1)) {
+        const covered = events.some(ev => ev.start <= d && d < ev.end);
+        if (!covered) holes++;
+      }
+      return holes;
+    }
+
+    function render() {
+      const y = view.getFullYear(), m = view.getMonth();
+      const { start, end } = getMonthGridRange(y, m);
+      monthLabel.textContent = `${y} 年 ${m + 1} 月`;
+
+      const days = [];
+      for (let d = new Date(start); d <= end; d = addDays(d, 1)) days.push(new Date(d));
+
+      const rows = Math.ceil(days.length / 7);
+      gridEl.style.gridTemplateRows = `repeat(${rows}, var(--cell-h))`;
+      gridEl.innerHTML = '';
+      eventLayer.innerHTML = '';
+      eventLayer.style.height = `calc(${rows} * var(--cell-h))`;
+      eventLayer.style.top = `calc(var(--week-h) + 1px)`;
+
+      days.forEach(d => {
+        const cell = document.createElement('div');
+        cell.className = 'cell';
+        if (d.getMonth() !== m) cell.classList.add('other');
+        if (d.getDay() === 0) cell.classList.add('sun');
+        if (sameDate(d, today)) cell.classList.add('today');
+
+        const date = document.createElement('div');
+        date.className = 'date';
+        date.textContent = d.getDate();
+        cell.appendChild(date);
+        gridEl.appendChild(cell);
+      });
+
+      const events = generateSchedules(start, end);
+
+      // 跨週切段
+      const segments = [];
+      events.forEach(ev => {
+        let segStart = fmtYMD(ev.start);
+        const evEnd = fmtYMD(ev.end);
+        while (segStart < evEnd) {
+          const ws = startOfWeekSun(segStart);
+          const we = addDays(ws, 7);
+          const segEnd = evEnd < we ? evEnd : we;
+          segments.push({
+            account: ev.account,
+            title: ev.title,
+            start: segStart,
+            end: segEnd
+          });
+          segStart = segEnd;
+        }
+      });
+
+      const vis = segments.filter(s => s.end > start && s.start < addDays(end, 1));
+      vis.sort((a, b) => a.start - b.start || a.end - b.end);
+
+      const lanesByRow = new Map();
+      const rowH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-h'));
+      const barH = 26, gapY = 4, topOffset = 34;
+
+
+      for (const seg of vis) {
+        const s = seg.start < start ? start : seg.start;
+        const e = seg.end > addDays(end, 1) ? addDays(end, 1) : seg.end;
+
+        const startIdx = Math.floor((s - start) / DAY);
+        const endIdxEx = Math.floor((e - start) / DAY);
+
+        const row = Math.floor(startIdx / 7);
+        const colStart = startIdx % 7;
+        const colEnd = (endIdxEx - 1) % 7;
+        const span = colEnd - colStart + 1;
+
+        if (!lanesByRow.has(row)) lanesByRow.set(row, []);
+        const lanes = lanesByRow.get(row);
+        let lane = 0;
+        while (lane < lanes.length && lanes[lane] >= colStart) lane++;
+        lanes[lane] = colEnd;
+
+        const bar = document.createElement('div');
+        bar.className = 'event-bar';
+        bar.textContent = seg.title;
+        bar.style.background = ACCOUNT_COLORS[seg.account] || "#22c55e";
+
+        const cellW = gridEl.clientWidth / 7;
+        bar.style.left = `${colStart * cellW + 4}px`;
+        bar.style.width = `${span * cellW - 8}px`;
+        bar.style.top = `${row * rowH + topOffset + lane * (barH + gapY)}px`;
+        bar.title = `${seg.title}：${fmt(seg.start)} ~ ${fmt(addDays(seg.end, -1))}`;
+
+        eventLayer.appendChild(bar);
+      }
+
+      const holes = countHoles(events, start, end);
+      statusBox.innerHTML = `
+        <div><b>硬規則狀態：</b>每週固定排入 1 筆週一型 + 1 筆週四型（已啟用）</div>
+        <div><b>冷卻規則：</b>同帳號離開後需 >30 天（31 天）</div>
+        <div><b>本月覆蓋檢查：</b>${holes === 0 ? `<span class="ok">0 天空窗 ✅</span>` : `<span class="warn">${holes} 天空窗</span>`}</div>
+      `;
+    }
+
+    document.getElementById('prevBtn').addEventListener('click', () => { view = new Date(view.getFullYear(), view.getMonth() - 1, 1); render(); });
+    document.getElementById('nextBtn').addEventListener('click', () => { view = new Date(view.getFullYear(), view.getMonth() + 1, 1); render(); });
+    document.getElementById('todayBtn').addEventListener('click', () => { view = new Date(today.getFullYear(), today.getMonth(), 1); render(); });
+    window.addEventListener('resize', render);
+
+    renderLegend();
+    render();
+  </script>
+</body>
+
+</html>
