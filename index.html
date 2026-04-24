@@ -17,16 +17,12 @@
       --focus: #7dd3fc;
       --radius: 14px;
       --cell-h: 130px;
-      /* 原本108，放大 */
       --week-h: 48px;
-      /* 原本34，放大 */
       --shadow: 0 8px 20px rgba(0, 0, 0, .35);
-      --min-cal-w: 980px;
-      /* 手機時讓日曆可橫向滑動 */
     }
 
     * {
-      box-sizing: border-box
+      box-sizing: border-box;
     }
 
     html,
@@ -82,11 +78,11 @@
     }
 
     .btn:hover {
-      filter: brightness(1.08)
+      filter: brightness(1.08);
     }
 
     .btn:active {
-      transform: translateY(1px)
+      transform: translateY(1px);
     }
 
     .btn:focus-visible {
@@ -103,15 +99,9 @@
       padding: 10px 8px;
     }
 
-    /* 外層加橫向捲動容器 */
-    .calendar-scroll {
-      overflow-x: auto;
-      -webkit-overflow-scrolling: touch;
-      border-radius: var(--radius);
-    }
-
     .calendar-wrap {
-      min-width: var(--min-cal-w);
+      width: 100%;
+      min-width: 0;
       border: 2px solid var(--line);
       background: linear-gradient(180deg, var(--panel), var(--panel-2));
       border-radius: var(--radius);
@@ -134,7 +124,7 @@
     }
 
     .weekdays .sun {
-      color: var(--sun)
+      color: var(--sun);
     }
 
     .grid {
@@ -153,7 +143,7 @@
     }
 
     .cell:nth-child(7n) {
-      border-right: none
+      border-right: none;
     }
 
     .date {
@@ -164,11 +154,11 @@
     }
 
     .cell.other .date {
-      color: #7f93b0
+      color: #7f93b0;
     }
 
     .cell.sun .date {
-      color: var(--sun)
+      color: var(--sun);
     }
 
     .cell.today {
@@ -242,56 +232,59 @@
 
     .ok {
       color: #4ade80;
-      font-weight: 800
+      font-weight: 800;
     }
 
     .warn {
       color: #fbbf24;
-      font-weight: 800
+      font-weight: 800;
     }
 
     /* 平板 */
     @media (max-width: 980px) {
       :root {
-        --cell-h: 120px;
-        --week-h: 44px;
-        --min-cal-w: 900px;
+        --cell-h: 100px;
+        --week-h: 40px;
       }
 
       .title {
-        font-size: 26px
+        font-size: 26px;
       }
 
       .month-label {
-        font-size: 20px
+        font-size: 20px;
       }
 
       .btn {
         min-height: 50px;
-        font-size: 17px
+        font-size: 17px;
+      }
+
+      .weekdays {
+        font-size: 16px;
       }
 
       .date {
-        font-size: 20px
+        font-size: 18px;
       }
 
       .event-bar {
-        font-size: 15px;
-        height: 24px;
-        line-height: 24px;
+        font-size: 13px;
+        height: 22px;
+        line-height: 22px;
+        padding: 0 8px;
       }
     }
 
-    /* 手機 */
+    /* 手機：完整顯示 7 欄，不滑動 */
     @media (max-width: 768px) {
       :root {
-        --cell-h: 112px;
-        --week-h: 42px;
-        --min-cal-w: 820px;
+        --cell-h: 76px;
+        --week-h: 34px;
       }
 
       .app {
-        padding: 0 12px 18px;
+        padding: 0 8px 16px;
       }
 
       .topbar {
@@ -300,19 +293,21 @@
       }
 
       .title {
-        font-size: 24px;
+        font-size: 22px;
       }
 
       .controls {
         display: grid;
         grid-template-columns: 1fr 1fr;
-        gap: 10px;
+        gap: 8px;
       }
 
       .month-label {
         grid-column: 1 / -1;
         order: -1;
-        font-size: 22px;
+        font-size: 20px;
+        padding: 8px 6px;
+        min-width: 0;
         background: #101a28;
         border: 1px solid var(--line);
         border-radius: 12px;
@@ -320,13 +315,39 @@
 
       .btn {
         width: 100%;
-        min-height: 52px;
-        font-size: 18px;
+        min-height: 46px;
+        font-size: 16px;
+        padding: 0 10px;
+      }
+
+      .weekdays {
+        font-size: 14px;
+        letter-spacing: 0;
+      }
+
+      .cell {
+        padding: 4px 4px;
+      }
+
+      .date {
+        font-size: 14px;
+      }
+
+      .event-bar {
+        height: 16px;
+        line-height: 16px;
+        font-size: 10px;
+        padding: 0 6px;
       }
 
       .legend,
       .info {
-        font-size: 17px;
+        font-size: 14px;
+      }
+
+      .chip {
+        font-size: 12px;
+        padding: 4px 8px;
       }
     }
   </style>
@@ -335,7 +356,7 @@
 <body>
   <div class="app">
     <div class="topbar">
-      <div class="title">帳號排班萬年曆）</div>
+      <div class="title">帳號排班萬年曆</div>
       <div class="controls">
         <button class="btn" id="prevBtn">◀ 上月</button>
         <div class="month-label" id="monthLabel"></div>
@@ -344,20 +365,18 @@
       </div>
     </div>
 
-    <div class="calendar-scroll">
-      <div class="calendar-wrap">
-        <div class="weekdays">
-          <div class="sun">日</div>
-          <div>一</div>
-          <div>二</div>
-          <div>三</div>
-          <div>四</div>
-          <div>五</div>
-          <div>六</div>
-        </div>
-        <div class="grid" id="grid"></div>
-        <div class="event-layer" id="eventLayer"></div>
+    <div class="calendar-wrap">
+      <div class="weekdays">
+        <div class="sun">日</div>
+        <div>一</div>
+        <div>二</div>
+        <div>三</div>
+        <div>四</div>
+        <div>五</div>
+        <div>六</div>
       </div>
+      <div class="grid" id="grid"></div>
+      <div class="event-layer" id="eventLayer"></div>
     </div>
 
     <div class="legend">
@@ -395,11 +414,11 @@
       B1: "#f59e0b", B2: "#ef4444", B3: "#84cc16", B4: "#14b8a6", B5: "#f97316"
     };
 
-    const MIN_GAP = 31;     // 離開後 >30天
-    const LEN_MON = 7;      // 週一型
-    const LEN_THU = 4;      // 週四型
+    const MIN_GAP = 31; // 離開後 >30天
+    const LEN_MON = 7;  // 週一型
+    const LEN_THU = 4;  // 週四型
 
-    // ===== 排程核心：每週強制一週一型+一週四型 =====
+    // ===== 排程核心：每週強制一週一型 + 一週四型 =====
     function generateSchedules(windowStart, windowEnd) {
       const planStart = addDays(windowStart, -120);
       const planEnd = addDays(windowEnd, 120);
@@ -424,7 +443,7 @@
       function addEvent(acc, s, len, label) {
         const start = fmtYMD(s), end = addDays(start, len);
         events.push({
-          id: `${acc}-${start.toISOString()}-${label}`,
+          id: `${acc}-${start.toISOString()}-${label || ''}`,
           account: acc,
           title: `${acc}`,
           start, end
@@ -433,28 +452,24 @@
         state[acc].used++;
       }
 
-      // 以週為單位前進（週日為每週起點）
       let wk = startOfWeekSun(planStart);
       while (wk <= planEnd) {
         const mon = addDays(wk, 1);
         const thu = addDays(wk, 4);
 
-        // 強制本週一筆週一型
         const accMon = pickAccount(mon);
-        if (accMon) addEvent(accMon, mon, LEN_MON);
+        if (accMon) addEvent(accMon, mon, LEN_MON, "MON");
 
-        // 強制本週一筆週四型
         const accThu = pickAccount(thu);
-        if (accThu) addEvent(accThu, thu, LEN_THU);
+        if (accThu) addEvent(accThu, thu, LEN_THU, "THU");
 
         wk = addDays(wk, 7);
       }
 
-      // 只保留視窗附近
       return events.filter(ev => ev.end > addDays(windowStart, -40) && ev.start < addDays(windowEnd, 40));
     }
 
-    // ===== UI渲染 =====
+    // ===== UI 渲染 =====
     const gridEl = document.getElementById('grid');
     const eventLayer = document.getElementById('eventLayer');
     const monthLabel = document.getElementById('monthLabel');
@@ -465,7 +480,9 @@
 
     function renderLegend() {
       const el = document.getElementById('accountLegend');
-      el.innerHTML = ALL.map(acc => `<span class="chip"><i class="dot" style="background:${ACCOUNT_COLORS[acc]}"></i>${acc}</span>`).join('');
+      el.innerHTML = ALL.map(acc =>
+        `<span class="chip"><i class="dot" style="background:${ACCOUNT_COLORS[acc]}"></i>${acc}</span>`
+      ).join('');
     }
 
     function countHoles(events, start, end) {
@@ -532,8 +549,11 @@
 
       const lanesByRow = new Map();
       const rowH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-h'));
-      const barH = 26, gapY = 4, topOffset = 34;
 
+      const isMobile = window.innerWidth <= 768;
+      const barH = isMobile ? 16 : 26;
+      const gapY = isMobile ? 2 : 4;
+      const topOffset = isMobile ? 18 : 34;
 
       for (const seg of vis) {
         const s = seg.start < start ? start : seg.start;
@@ -559,8 +579,8 @@
         bar.style.background = ACCOUNT_COLORS[seg.account] || "#22c55e";
 
         const cellW = gridEl.clientWidth / 7;
-        bar.style.left = `${colStart * cellW + 4}px`;
-        bar.style.width = `${span * cellW - 8}px`;
+        bar.style.left = `${colStart * cellW + 2}px`;
+        bar.style.width = `${span * cellW - 4}px`;
         bar.style.top = `${row * rowH + topOffset + lane * (barH + gapY)}px`;
         bar.title = `${seg.title}：${fmt(seg.start)} ~ ${fmt(addDays(seg.end, -1))}`;
 
@@ -575,9 +595,21 @@
       `;
     }
 
-    document.getElementById('prevBtn').addEventListener('click', () => { view = new Date(view.getFullYear(), view.getMonth() - 1, 1); render(); });
-    document.getElementById('nextBtn').addEventListener('click', () => { view = new Date(view.getFullYear(), view.getMonth() + 1, 1); render(); });
-    document.getElementById('todayBtn').addEventListener('click', () => { view = new Date(today.getFullYear(), today.getMonth(), 1); render(); });
+    document.getElementById('prevBtn').addEventListener('click', () => {
+      view = new Date(view.getFullYear(), view.getMonth() - 1, 1);
+      render();
+    });
+
+    document.getElementById('nextBtn').addEventListener('click', () => {
+      view = new Date(view.getFullYear(), view.getMonth() + 1, 1);
+      render();
+    });
+
+    document.getElementById('todayBtn').addEventListener('click', () => {
+      view = new Date(today.getFullYear(), today.getMonth(), 1);
+      render();
+    });
+
     window.addEventListener('resize', render);
 
     renderLegend();
