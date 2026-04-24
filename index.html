@@ -4,7 +4,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>帳號排班萬年曆</title>
+  <title>CM回歸號排程表</title>
   <style>
     :root {
       --bg: #0b0f14;
@@ -189,6 +189,21 @@
       pointer-events: auto;
     }
 
+    /* C1 專屬：高辨識補洞條 */
+    .event-bar.c1-special {
+      color: #fff;
+      text-shadow: 0 1px 2px rgba(0, 0, 0, .55);
+      box-shadow:
+        0 0 0 1.5px rgba(255, 255, 255, .9),
+        0 0 14px rgba(244, 63, 94, .45),
+        0 3px 10px rgba(0, 0, 0, .35);
+      background-image:
+        repeating-linear-gradient(-45deg,
+          rgba(255, 255, 255, .22) 0 8px,
+          rgba(255, 255, 255, 0) 8px 16px),
+        linear-gradient(90deg, #fbbf24 0%, #fb7185 48%, #c026d3 100%);
+    }
+
     .legend {
       margin-top: 12px;
       display: flex;
@@ -240,7 +255,6 @@
       font-weight: 800;
     }
 
-    /* 平板 */
     @media (max-width: 980px) {
       :root {
         --cell-h: 100px;
@@ -276,7 +290,6 @@
       }
     }
 
-    /* 手機：完整顯示 7 欄，不滑動 */
     @media (max-width: 768px) {
       :root {
         --cell-h: 76px;
@@ -322,7 +335,6 @@
 
       .weekdays {
         font-size: 14px;
-        letter-spacing: 0;
       }
 
       .cell {
@@ -356,7 +368,7 @@
 <body>
   <div class="app">
     <div class="topbar">
-      <div class="title">帳號排班萬年曆</div>
+      <div class="title">CM回歸號排程表</div>
       <div class="controls">
         <button class="btn" id="prevBtn">◀ 上月</button>
         <div class="month-label" id="monthLabel"></div>
@@ -380,7 +392,7 @@
     </div>
 
     <div class="legend">
-      <span><b>硬規則：</b>每週至少一筆週一型(7天) + 一筆週四型(4天)</span>
+      <span><b>硬規則：</b>每週至少一筆週一型(7天) + 一筆週四型(4天)；空窗由 C1 補 7 天</span>
     </div>
     <div class="legend" id="accountLegend"></div>
     <div class="info" id="statusBox"></div>
@@ -396,6 +408,7 @@
     const firstDayOfMonth = (y, m) => new Date(y, m, 1);
     const lastDayOfMonth = (y, m) => new Date(y, m + 1, 0);
     const fmt = d => `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+    const atHour = (d, h = 0, min = 0, sec = 0, ms = 0) => new Date(d.getFullYear(), d.getMonth(), d.getDate(), h, min, sec, ms);
 
     function getMonthGridRange(y, m) {
       const first = firstDayOfMonth(y, m), last = lastDayOfMonth(y, m);
@@ -407,61 +420,97 @@
     // ===== 帳號池 =====
     const A = ["A1", "A2", "A3", "A4", "A5"];
     const B = ["B1", "B2", "B3", "B4", "B5"];
-    const ALL = [...A, ...B];
+    const C = ["C1"]; // 補洞專用
+    const ALL = [...A, ...B, ...C];
+    const AB_POOL = [...A, ...B];
 
     const ACCOUNT_COLORS = {
       A1: "#22c55e", A2: "#06b6d4", A3: "#3b82f6", A4: "#8b5cf6", A5: "#ec4899",
-      B1: "#f59e0b", B2: "#ef4444", B3: "#84cc16", B4: "#14b8a6", B5: "#f97316"
+      B1: "#f59e0b", B2: "#ef4444", B3: "#84cc16", B4: "#14b8a6", B5: "#f97316",
+      C1: "#c026d3"
     };
 
-    const MIN_GAP = 31; // 離開後 >30天
-    const LEN_MON = 7;  // 週一型
-    const LEN_THU = 4;  // 週四型
+    const SPECIAL_ACCOUNTS = new Set(["C1"]);
 
-    // ===== 排程核心：每週強制一週一型 + 一週四型 =====
+    const COOL_DAYS = 30;
+    const LEAVE_CUTOFF_HOUR = 21;
+    const LEN_MON = 7;
+    const LEN_THU = 4;
+    const LEN_BRIDGE = 7;
+
     function generateSchedules(windowStart, windowEnd) {
       const planStart = addDays(windowStart, -120);
       const planEnd = addDays(windowEnd, 120);
 
       const state = {};
-      ALL.forEach(acc => state[acc] = { lastEnd: addDays(planStart, -200), used: 0 });
+      ALL.forEach(acc => {
+        state[acc] = {
+          nextAvailableAt: new Date(planStart.getFullYear() - 5, 0, 1, 0, 0, 0, 0),
+          used: 0
+        };
+      });
 
       const events = [];
 
-      const canUse = (acc, day) => day >= addDays(state[acc].lastEnd, MIN_GAP);
+      const canUseAtDate = (acc, day) => atHour(day, 0).getTime() >= state[acc].nextAvailableAt.getTime();
 
-      function pickAccount(day) {
-        const cands = ALL.filter(acc => canUse(acc, day));
+      function pickAccount(day, pool = ALL) {
+        const cands = pool.filter(acc => canUseAtDate(acc, day));
         if (!cands.length) return null;
         cands.sort((x, y) => {
           if (state[x].used !== state[y].used) return state[x].used - state[y].used;
-          return state[x].lastEnd - state[y].lastEnd;
+          return state[x].nextAvailableAt - state[y].nextAvailableAt;
         });
         return cands[0];
       }
 
       function addEvent(acc, s, len, label) {
-        const start = fmtYMD(s), end = addDays(start, len);
+        const start = fmtYMD(s);
+        const end = addDays(start, len); // [start, end)
+
         events.push({
           id: `${acc}-${start.toISOString()}-${label || ''}`,
           account: acc,
-          title: `${acc}`,
+          title: acc,
           start, end
         });
-        state[acc].lastEnd = end;
+
+        const lastServeDate = addDays(end, -1);
+        const leaveAt = atHour(lastServeDate, LEAVE_CUTOFF_HOUR, 0, 0, 0);
+        state[acc].nextAvailableAt = new Date(leaveAt.getTime() + COOL_DAYS * DAY);
         state[acc].used++;
       }
 
+      const isCovered = (d) => events.some(ev => ev.start <= d && d < ev.end);
+
       let wk = startOfWeekSun(planStart);
       while (wk <= planEnd) {
+        const weekStart = wk;
+        const weekEndEx = addDays(wk, 7);
+
         const mon = addDays(wk, 1);
         const thu = addDays(wk, 4);
 
-        const accMon = pickAccount(mon);
+        // 主池：AB
+        const accMon = pickAccount(mon, AB_POOL);
         if (accMon) addEvent(accMon, mon, LEN_MON, "MON");
 
-        const accThu = pickAccount(thu);
+        const accThu = pickAccount(thu, AB_POOL);
         if (accThu) addEvent(accThu, thu, LEN_THU, "THU");
+
+        // 補洞：本週第一個空窗日，用 C1 補 7 天
+        let firstHole = null;
+        for (let d = new Date(weekStart); d < weekEndEx; d = addDays(d, 1)) {
+          if (!isCovered(d)) {
+            firstHole = fmtYMD(d);
+            break;
+          }
+        }
+
+        if (firstHole) {
+          const bridgeAcc = pickAccount(firstHole, C); // 僅 C1
+          if (bridgeAcc) addEvent(bridgeAcc, firstHole, LEN_BRIDGE, "BRIDGE");
+        }
 
         wk = addDays(wk, 7);
       }
@@ -478,11 +527,33 @@
     const today = fmtYMD(new Date());
     let view = new Date(today.getFullYear(), today.getMonth(), 1);
 
+    // 主排程快取：避免切月重算造成跨月不一致
+    let masterEvents = [];
+    let masterRange = null; // {start, end}
+
+    function ensureMasterEvents(centerDate = today) {
+      const y = centerDate.getFullYear();
+      const start = new Date(y - 1, 0, 1);
+      const end = new Date(y + 1, 11, 31);
+
+      if (!masterRange || start < masterRange.start || end > masterRange.end || masterEvents.length === 0) {
+        masterEvents = generateSchedules(start, end);
+        masterRange = { start, end };
+      }
+    }
+
     function renderLegend() {
       const el = document.getElementById('accountLegend');
-      el.innerHTML = ALL.map(acc =>
-        `<span class="chip"><i class="dot" style="background:${ACCOUNT_COLORS[acc]}"></i>${acc}</span>`
-      ).join('');
+      el.innerHTML = ALL.map(acc => {
+        if (SPECIAL_ACCOUNTS.has(acc)) {
+          return `
+            <span class="chip">
+              <i class="dot" style="background: linear-gradient(90deg, #fbbf24 0%, #fb7185 48%, #c026d3 100%); box-shadow: 0 0 0 1px rgba(255,255,255,.55);"></i>
+              ${acc}
+            </span>`;
+        }
+        return `<span class="chip"><i class="dot" style="background:${ACCOUNT_COLORS[acc]}"></i>${acc}</span>`;
+      }).join('');
     }
 
     function countHoles(events, start, end) {
@@ -523,7 +594,8 @@
         gridEl.appendChild(cell);
       });
 
-      const events = generateSchedules(start, end);
+      ensureMasterEvents(view);
+      const events = masterEvents.filter(ev => ev.end > start && ev.start < addDays(end, 1));
 
       // 跨週切段
       const segments = [];
@@ -534,12 +606,7 @@
           const ws = startOfWeekSun(segStart);
           const we = addDays(ws, 7);
           const segEnd = evEnd < we ? evEnd : we;
-          segments.push({
-            account: ev.account,
-            title: ev.title,
-            start: segStart,
-            end: segEnd
-          });
+          segments.push({ account: ev.account, title: ev.title, start: segStart, end: segEnd });
           segStart = segEnd;
         }
       });
@@ -549,7 +616,6 @@
 
       const lanesByRow = new Map();
       const rowH = parseInt(getComputedStyle(document.documentElement).getPropertyValue('--cell-h'));
-
       const isMobile = window.innerWidth <= 768;
       const barH = isMobile ? 16 : 26;
       const gapY = isMobile ? 2 : 4;
@@ -576,7 +642,12 @@
         const bar = document.createElement('div');
         bar.className = 'event-bar';
         bar.textContent = seg.title;
-        bar.style.background = ACCOUNT_COLORS[seg.account] || "#22c55e";
+
+        if (SPECIAL_ACCOUNTS.has(seg.account)) {
+          bar.classList.add('c1-special');
+        } else {
+          bar.style.background = ACCOUNT_COLORS[seg.account] || "#22c55e";
+        }
 
         const cellW = gridEl.clientWidth / 7;
         bar.style.left = `${colStart * cellW + 2}px`;
@@ -589,8 +660,8 @@
 
       const holes = countHoles(events, start, end);
       statusBox.innerHTML = `
-        <div><b>硬規則狀態：</b>每週固定排入 1 筆週一型 + 1 筆週四型（已啟用）</div>
-        <div><b>冷卻規則：</b>同帳號離開後需 >30 天（31 天）</div>
+        <div><b>硬規則狀態：</b>每週固定 1 筆週一型 + 1 筆週四型 + 空窗補 1 筆 7 天（C1）</div>
+        <div><b>冷卻規則：</b>離開日 21:00 才算離開，離開後開始計 ${COOL_DAYS} 天</div>
         <div><b>本月覆蓋檢查：</b>${holes === 0 ? `<span class="ok">0 天空窗 ✅</span>` : `<span class="warn">${holes} 天空窗</span>`}</div>
       `;
     }
@@ -613,6 +684,7 @@
     window.addEventListener('resize', render);
 
     renderLegend();
+    ensureMasterEvents(view);
     render();
   </script>
 </body>
