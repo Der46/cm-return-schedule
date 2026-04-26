@@ -249,6 +249,11 @@
       outline-offset: 2px;
     }
 
+    .chip .name {
+      text-decoration: underline;
+      text-underline-offset: 2px;
+    }
+
     .dot {
       width: 12px;
       height: 12px;
@@ -396,6 +401,8 @@
         <div class="month-label" id="monthLabel"></div>
         <button class="btn" id="nextBtn">下月 ▶</button>
         <button class="btn" id="todayBtn">今天</button>
+        <button class="btn" id="modeBtn">方案：經典輪值</button>
+        <button class="btn" id="renameBtn">帳號名稱設定</button>
       </div>
     </div>
 
@@ -466,7 +473,97 @@
     const BRIDGE_ENTER_H = 12, BRIDGE_ENTER_M = 0;
     const LEAVE_H = 20, LEAVE_M = 55;
 
+    const MODE_CLASSIC = "classic";   // 經典輪值
+    const MODE_TWIN_THU = "twinThu";  // 雙星週四（不使用C1）
+    let scheduleMode = MODE_CLASSIC;
+
+    const NAME_STORAGE_KEY = "cm-account-names-v1";
+    let accountDisplayNames = loadAccountNames();
+
     const selectedAccounts = new Set();
+
+    function loadAccountNames() {
+      try {
+        const raw = localStorage.getItem(NAME_STORAGE_KEY);
+        const parsed = raw ? JSON.parse(raw) : {};
+        const result = {};
+        ALL.forEach(acc => {
+          const name = (parsed && typeof parsed[acc] === "string") ? parsed[acc].trim() : "";
+          result[acc] = name || acc;
+        });
+        return result;
+      } catch {
+        const fallback = {};
+        ALL.forEach(acc => fallback[acc] = acc);
+        return fallback;
+      }
+    }
+
+    function saveAccountNames() {
+      try {
+        localStorage.setItem(NAME_STORAGE_KEY, JSON.stringify(accountDisplayNames));
+      } catch (e) {
+        alert("名稱儲存失敗（瀏覽器可能關閉了儲存權限）");
+      }
+    }
+
+    function getDisplayName(acc) {
+      return accountDisplayNames[acc] || acc;
+    }
+
+    function setDisplayName(acc, name) {
+      const cleaned = (name || "").trim();
+      accountDisplayNames[acc] = cleaned || acc;
+      saveAccountNames();
+    }
+
+    function resetAllNames() {
+      ALL.forEach(acc => accountDisplayNames[acc] = acc);
+      saveAccountNames();
+    }
+
+    function openBulkRenameDialog() {
+      const lines = ALL.map(acc => `${acc}=${getDisplayName(acc)}`).join('\n');
+      const input = prompt(
+        `請用每行「代號=名稱」編輯（空白會回復代號）
+例如：
+A1=主力一號
+B3=備援三號
+C1=橋接號
+
+目前內容：`, lines);
+
+      if (input === null) return;
+
+      const next = { ...accountDisplayNames };
+      const map = new Map(ALL.map(acc => [acc, acc]));
+
+      input.split('\n').forEach(line => {
+        const s = line.trim();
+        if (!s) return;
+        const idx = s.indexOf('=');
+        if (idx < 0) return;
+        const key = s.slice(0, idx).trim().toUpperCase();
+        const val = s.slice(idx + 1).trim();
+        if (map.has(key)) next[key] = val || key;
+      });
+
+      accountDisplayNames = next;
+      saveAccountNames();
+      rebuildMasterEvents();
+      renderLegend();
+      render();
+    }
+
+    function renameSingleAccount(acc) {
+      const oldName = getDisplayName(acc);
+      const input = prompt(`請輸入 ${acc} 的顯示名稱：`, oldName);
+      if (input === null) return;
+      setDisplayName(acc, input);
+      rebuildMasterEvents();
+      renderLegend();
+      render();
+    }
 
     function nextMondayFrom(dateOnly) {
       const d = fmtYMD(dateOnly);
@@ -475,7 +572,7 @@
       return addDays(d, add);
     }
 
-    function generateSchedules(windowStart, windowEnd) {
+    function generateSchedules(windowStart, windowEnd, mode = MODE_CLASSIC) {
       const planStart = addDays(windowStart, -120);
       const planEnd = addDays(windowEnd, 120);
 
@@ -491,9 +588,14 @@
       const events = [];
       const canUseAtDateTime = (acc, enterAt) => enterAt.getTime() >= state[acc].nextAvailableAt.getTime();
 
-      function pickAccount(enterAt, pool = ALL) {
-        const cands = pool.filter(acc => canUseAtDateTime(acc, enterAt));
+      function pickAccount(enterAt, pool = ALL, banSet = null) {
+        const cands = pool.filter(acc => {
+          if (!canUseAtDateTime(acc, enterAt)) return false;
+          if (banSet && banSet.has(acc)) return false;
+          return true;
+        });
         if (!cands.length) return null;
+
         cands.sort((x, y) => {
           if (state[x].used !== state[y].used) return state[x].used - state[y].used;
           return state[x].nextAvailableAt - state[y].nextAvailableAt;
@@ -508,12 +610,13 @@
         const prevLeave = state[acc].lastLeaveAt;
         const gapText = prevLeave ? `距上次離開 ${formatGap(prevLeave, enterAt)}` : "首回歸";
 
-        // ✅ 你要的最終格式
-        const barText = `${acc}｜進 ${fmtHM(enterAt)}｜離 ${fmtHM(leaveAt)}｜${gapText}`;
+        const accName = getDisplayName(acc);
+        const barText = `${accName}｜進 ${fmtHM(enterAt)}｜離 ${fmtHM(leaveAt)}｜${gapText}`;
 
         events.push({
           id: `${acc}-${enterAt.toISOString()}-${label || ''}`,
           account: acc,
+          accountName: accName,
           title: barText,
           start: startDate,
           end: endDateEx,
@@ -538,34 +641,52 @@
         const monDate = addDays(wk, 1);
         const thuDate = addDays(wk, 4);
 
-        const monEnterAt = atTime(monDate, MON_ENTER_H, MON_ENTER_M, 0, 0);
-        const monAcc = pickAccount(monEnterAt, AB_POOL);
-        if (monAcc) {
-          const monLeaveAt = atTime(nextMondayFrom(monDate), LEAVE_H, LEAVE_M, 0, 0);
-          addEventWithTimes(monAcc, monEnterAt, monLeaveAt, "MON");
-        }
-
-        const thuEnterAt = atTime(thuDate, THU_ENTER_H, THU_ENTER_M, 0, 0);
-        const thuAcc = pickAccount(thuEnterAt, AB_POOL);
-        if (thuAcc) {
-          const thuLeaveAt = atTime(nextMondayFrom(thuDate), LEAVE_H, LEAVE_M, 0, 0);
-          addEventWithTimes(thuAcc, thuEnterAt, thuLeaveAt, "THU");
-        }
-
-        let firstHole = null;
-        for (let d = new Date(weekStart); d < weekEndEx; d = addDays(d, 1)) {
-          if (!isCoveredDate(d)) {
-            firstHole = fmtYMD(d);
-            break;
+        if (mode === MODE_CLASSIC) {
+          const monEnterAt = atTime(monDate, MON_ENTER_H, MON_ENTER_M, 0, 0);
+          const monAcc = pickAccount(monEnterAt, AB_POOL);
+          if (monAcc) {
+            const monLeaveAt = atTime(nextMondayFrom(monDate), LEAVE_H, LEAVE_M, 0, 0);
+            addEventWithTimes(monAcc, monEnterAt, monLeaveAt, "MON");
           }
-        }
 
-        if (firstHole) {
-          const bridgeEnterAt = atTime(firstHole, BRIDGE_ENTER_H, BRIDGE_ENTER_M, 0, 0);
-          const bridgeAcc = pickAccount(bridgeEnterAt, C);
-          if (bridgeAcc) {
-            const bridgeLeaveAt = atTime(addDays(firstHole, 6), LEAVE_H, LEAVE_M, 0, 0);
-            addEventWithTimes(bridgeAcc, bridgeEnterAt, bridgeLeaveAt, "BRIDGE");
+          const thuEnterAt = atTime(thuDate, THU_ENTER_H, THU_ENTER_M, 0, 0);
+          const thuAcc = pickAccount(thuEnterAt, AB_POOL);
+          if (thuAcc) {
+            const thuLeaveAt = atTime(nextMondayFrom(thuDate), LEAVE_H, LEAVE_M, 0, 0);
+            addEventWithTimes(thuAcc, thuEnterAt, thuLeaveAt, "THU");
+          }
+
+          let firstHole = null;
+          for (let d = new Date(weekStart); d < weekEndEx; d = addDays(d, 1)) {
+            if (!isCoveredDate(d)) {
+              firstHole = fmtYMD(d);
+              break;
+            }
+          }
+
+          if (firstHole) {
+            const bridgeEnterAt = atTime(firstHole, BRIDGE_ENTER_H, BRIDGE_ENTER_M, 0, 0);
+            const bridgeAcc = pickAccount(bridgeEnterAt, C);
+            if (bridgeAcc) {
+              const bridgeLeaveAt = atTime(addDays(firstHole, 6), LEAVE_H, LEAVE_M, 0, 0);
+              addEventWithTimes(bridgeAcc, bridgeEnterAt, bridgeLeaveAt, "BRIDGE");
+            }
+          }
+        } else if (mode === MODE_TWIN_THU) {
+          const enterAt = atTime(thuDate, THU_ENTER_H, THU_ENTER_M, 0, 0);
+          const banned = new Set();
+
+          const acc1 = pickAccount(enterAt, AB_POOL, banned);
+          if (acc1) {
+            const leaveAt1 = atTime(nextMondayFrom(thuDate), LEAVE_H, LEAVE_M, 0, 0);
+            addEventWithTimes(acc1, enterAt, leaveAt1, "THU#1");
+            banned.add(acc1);
+          }
+
+          const acc2 = pickAccount(enterAt, AB_POOL, banned);
+          if (acc2) {
+            const leaveAt2 = atTime(nextMondayFrom(thuDate), LEAVE_H, LEAVE_M, 0, 0);
+            addEventWithTimes(acc2, enterAt, leaveAt2, "THU#2");
           }
         }
 
@@ -580,6 +701,8 @@
     const monthLabel = document.getElementById('monthLabel');
     const statusBox = document.getElementById('statusBox');
     const legendEl = document.getElementById('accountLegend');
+    const modeBtn = document.getElementById('modeBtn');
+    const renameBtn = document.getElementById('renameBtn');
 
     const today = fmtYMD(new Date());
     let view = new Date(today.getFullYear(), today.getMonth(), 1);
@@ -587,15 +710,29 @@
     let masterEvents = [];
     let masterRange = null;
 
+    function getModeLabel(mode) {
+      return mode === MODE_TWIN_THU ? "雙星週四" : "經典輪值";
+    }
+
+    function updateModeBtnText() {
+      modeBtn.textContent = `方案：${getModeLabel(scheduleMode)}`;
+    }
+
     function ensureMasterEvents(centerDate = today) {
       const y = centerDate.getFullYear();
       const start = new Date(y - 1, 0, 1);
       const end = new Date(y + 1, 11, 31);
 
-      if (!masterRange || start < masterRange.start || end > masterRange.end || masterEvents.length === 0) {
-        masterEvents = generateSchedules(start, end);
-        masterRange = { start, end };
+      if (!masterRange || start < masterRange.start || end > masterRange.end || masterEvents.length === 0 || masterRange.mode !== scheduleMode) {
+        masterEvents = generateSchedules(start, end, scheduleMode);
+        masterRange = { start, end, mode: scheduleMode };
       }
+    }
+
+    function rebuildMasterEvents() {
+      masterEvents = [];
+      masterRange = null;
+      ensureMasterEvents(view);
     }
 
     function isAccountVisible(acc) {
@@ -610,27 +747,39 @@
     }
 
     function renderLegend() {
-      legendEl.innerHTML = ALL.map(acc => {
+      const legendAccounts = (scheduleMode === MODE_TWIN_THU) ? AB_POOL : ALL;
+
+      if (scheduleMode === MODE_TWIN_THU && selectedAccounts.has("C1")) {
+        selectedAccounts.delete("C1");
+      }
+
+      legendEl.innerHTML = legendAccounts.map(acc => {
         const active = selectedAccounts.size === 0 || selectedAccounts.has(acc);
         const cls = `chip ${active ? 'active' : 'inactive'}`;
+        const displayName = getDisplayName(acc);
 
         if (SPECIAL_ACCOUNTS.has(acc)) {
           return `
-            <button type="button" class="${cls}" data-acc="${acc}" title="點擊切換 ${acc}">
+            <button type="button" class="${cls}" data-acc="${acc}" title="點擊切換篩選；雙擊可改名">
               <i class="dot" style="background: linear-gradient(90deg, #fbbf24 0%, #fb7185 48%, #c026d3 100%); box-shadow: 0 0 0 1px rgba(255,255,255,.55);"></i>
-              ${acc}
+              <span class="name">${displayName}</span>
             </button>`;
         }
 
         return `
-          <button type="button" class="${cls}" data-acc="${acc}" title="點擊切換 ${acc}">
+          <button type="button" class="${cls}" data-acc="${acc}" title="點擊切換篩選；雙擊可改名">
             <i class="dot" style="background:${ACCOUNT_COLORS[acc]}"></i>
-            ${acc}
+            <span class="name">${displayName}</span>
           </button>`;
       }).join('');
 
       legendEl.querySelectorAll('[data-acc]').forEach(btn => {
         btn.addEventListener('click', () => toggleAccount(btn.dataset.acc));
+        btn.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          renameSingleAccount(btn.dataset.acc);
+        });
       });
     }
 
@@ -733,20 +882,26 @@
         bar.style.left = `${colStart * cellW + 2}px`;
         bar.style.width = `${span * cellW - 4}px`;
         bar.style.top = `${row * rowH + topOffset + lane * (barH + gapY)}px`;
-        bar.title = `${seg.account}｜進:${fmtDateTime(seg.enterAt)}｜離:${fmtDateTime(seg.leaveAt)}｜${seg.gapText}`;
+        bar.title = `${seg.accountName}（${seg.account}）｜進:${fmtDateTime(seg.enterAt)}｜離:${fmtDateTime(seg.leaveAt)}｜${seg.gapText}`;
 
         eventLayer.appendChild(bar);
       }
 
       const holes = countHoles(events, start, end);
       const filterText = selectedAccounts.size === 0
-        ? "全部帳號"
-        : Array.from(selectedAccounts).sort().join(", ");
+        ? ((scheduleMode === MODE_TWIN_THU) ? "全部 A/B 帳號" : "全部帳號")
+        : Array.from(selectedAccounts).sort().map(acc => `${getDisplayName(acc)}(${acc})`).join(", ");
+
+      const hardRuleText = scheduleMode === MODE_TWIN_THU
+        ? "每週兩個主號：皆為週四 19:55 進入；皆於下週一 20:55 離開（不使用 C1）"
+        : "週一型進入=週一 21:00；週四型進入=週四 19:55；離開=下週一 20:55（含 C1 補洞）";
 
       statusBox.innerHTML = `
+        <div><b>目前方案：</b>${getModeLabel(scheduleMode)}</div>
         <div><b>目前顯示帳號：</b>${filterText}</div>
-        <div><b>硬規則：</b>週一型進入=週一 21:00；週四型進入=週四 20:00 前（19:55）；離開=下週一 20:55（21:00前）</div>
+        <div><b>硬規則：</b>${hardRuleText}</div>
         <div><b>冷卻規則：</b>從「實際離開時間」起算 ${COOL_DAYS} 天，滿期後才能再入場</div>
+        <div><b>名稱提示：</b>圖例可<span class="ok">雙擊改名</span>，或按「帳號名稱設定」批次修改（會自動保存）</div>
         <div><b>本月覆蓋檢查（依目前篩選）：</b>${holes === 0 ? `<span class="ok">0 天空窗 ✅</span>` : `<span class="warn">${holes} 天空窗</span>`}</div>
       `;
     }
@@ -766,8 +921,21 @@
       render();
     });
 
+    modeBtn.addEventListener('click', () => {
+      scheduleMode = (scheduleMode === MODE_CLASSIC) ? MODE_TWIN_THU : MODE_CLASSIC;
+      updateModeBtnText();
+      rebuildMasterEvents();
+      renderLegend();
+      render();
+    });
+
+    renameBtn.addEventListener('click', () => {
+      openBulkRenameDialog();
+    });
+
     window.addEventListener('resize', render);
 
+    updateModeBtnText();
     renderLegend();
     ensureMasterEvents(view);
     render();
